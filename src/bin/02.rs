@@ -32,7 +32,7 @@ fn extract_round(round_substring: &str) -> Round {
 
 fn extract_rounds(rounds_substring: &str) -> Vec<Round> {
     rounds_substring
-        .split(";")
+        .split(';')
         .map(|s| s.trim())
         .map(extract_round)
         .collect()
