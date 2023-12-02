@@ -8,6 +8,16 @@ Solutions for [Advent of Code](https://adventofcode.com/) in [Rust](https://www.
 
 <!--- benchmarking table --->
 
+## Benchmarks
+
+|           Day            |  Part 1   | Part 2  |
+| :----------------------: | :-------: | :-----: |
+| [Day 1](./src/bin/01.rs) | `264.3µs` | `5.2ms` |
+
+**Total: 5.46ms**
+
+<!--- benchmarking table --->
+
 ---
 
 ## Setup
@@ -51,7 +61,7 @@ Every [solution](https://github.com/fspoettel/advent-of-code-rust/blob/main/src/
 
 ### Download input & description for a day
 
-> [!IMPORTANT] 
+> [!IMPORTANT]
 > This command requires [installing the aoc-cli crate](#configure-aoc-cli-integration).
 
 ```sh
