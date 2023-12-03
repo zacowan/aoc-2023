@@ -1,9 +1,17 @@
+use std::collections::HashSet;
+
 advent_of_code::solution!(3);
 
 #[derive(Clone)]
 struct Node {
     value: char,
     is_adjacent_to_symbol: Option<bool>,
+}
+
+struct NodeWithRowAndCol {
+    value: char,
+    row: usize,
+    col: usize,
 }
 
 impl Node {
@@ -19,8 +27,41 @@ fn build_node(value: char) -> Node {
     }
 }
 
-fn mutable_bfs_with_callback<F>(nodes: &mut [Vec<Node>], starting_node: (usize, usize), callback: F)
-where
+fn get_adjacent_nodes(
+    nodes: &[Vec<Node>],
+    starting_node: (usize, usize),
+) -> Vec<NodeWithRowAndCol> {
+    let (i, j) = starting_node;
+    let mut adjacent_nodes = vec![];
+    for di in -1..2 {
+        for dj in -1..2 {
+            let (r, c) = (
+                (i as isize + di as isize) as usize,
+                (j as isize + dj as isize) as usize,
+            );
+            let row = nodes.get(r);
+            if row.is_none() {
+                continue;
+            }
+            let node = row.unwrap().get(c);
+            if node.is_none() {
+                continue;
+            }
+            adjacent_nodes.push(NodeWithRowAndCol {
+                value: node.unwrap().value,
+                row: r,
+                col: c,
+            });
+        }
+    }
+    adjacent_nodes
+}
+
+fn do_callback_on_adjacent_nodes<F>(
+    nodes: &mut [Vec<Node>],
+    starting_node: (usize, usize),
+    callback: F,
+) where
     F: Fn(&mut Node),
 {
     let (i, j) = starting_node;
@@ -47,12 +88,57 @@ fn mark_nodes_adjacent_to_symbol(nodes: Vec<Vec<Node>>) -> Vec<Vec<Node>> {
                 continue;
             }
 
-            mutable_bfs_with_callback(&mut nodes_copy, (i, j), |node| {
+            do_callback_on_adjacent_nodes(&mut nodes_copy, (i, j), |node| {
                 node.set_adjacent_to_symbol(true);
             });
         }
     }
     nodes_copy
+}
+
+fn build_part_number_from_node(
+    nodes: &[Vec<Node>],
+    starting_node: &NodeWithRowAndCol,
+    visited: &mut HashSet<(usize, usize)>,
+) -> u32 {
+    let mut part_number = starting_node.value.to_string();
+    let row = nodes.get(starting_node.row).unwrap();
+    // Look to the left
+    let mut curr_col: i32 = (starting_node.col - 1).try_into().unwrap();
+    while curr_col >= 0 {
+        let node = row.get(curr_col as usize);
+        if node.is_none() {
+            break;
+        }
+
+        visited.insert((starting_node.row, curr_col as usize));
+
+        if !node.unwrap().value.is_numeric() {
+            break;
+        }
+
+        part_number = node.unwrap().value.to_string() + &part_number;
+        curr_col -= 1;
+    }
+    // Look to the right
+    curr_col = (starting_node.col + 1).try_into().unwrap();
+    while (curr_col as usize) < row.len() {
+        let node = row.get(curr_col as usize);
+        if node.is_none() {
+            break;
+        }
+
+        visited.insert((starting_node.row, curr_col as usize));
+
+        if !node.unwrap().value.is_numeric() {
+            break;
+        }
+
+        part_number += &node.unwrap().value.to_string();
+        curr_col += 1;
+    }
+
+    part_number.parse().unwrap()
 }
 
 /// Get sum of part numbers.
@@ -102,15 +188,39 @@ pub fn part_one(input: &str) -> Option<u32> {
 #[allow(unused_variables)] // TODO
 pub fn part_two(input: &str) -> Option<u32> {
     // build the data structure
+    let nodes: Vec<Vec<Node>> = input
+        .lines()
+        .map(|l| l.chars().map(build_node).collect())
+        .collect();
 
-    // traverse, mark spaces that are adjacent to a symbol
+    // look for "*", get adjacent part numbers
+    let mut gear_ratios: Vec<u32> = vec![];
+    for (i, row) in nodes.iter().enumerate() {
+        for (j, node) in row.iter().enumerate() {
+            if node.value != '*' {
+                continue;
+            }
 
-    // traverse, for each part number, check if it is near a "*" and add it to the list of part numbers
-    // TODO: in practice, how do you actually do the above with this data structure?
+            let adjacent_nodes = get_adjacent_nodes(&nodes, (i, j));
+            let mut visited: HashSet<(usize, usize)> = HashSet::new();
+            let adjacent_part_numbers: Vec<u32> = adjacent_nodes
+                .iter()
+                .filter_map(|n| {
+                    if !n.value.is_numeric() || visited.contains(&(n.row, n.col)) {
+                        return None;
+                    }
 
-    // traverse, get sum of all gear ratios
+                    Some(build_part_number_from_node(&nodes, n, &mut visited))
+                })
+                .collect();
 
-    None
+            if adjacent_part_numbers.len() == 2 {
+                gear_ratios.push(adjacent_part_numbers.iter().product());
+            }
+        }
+    }
+
+    Some(gear_ratios.iter().sum())
 }
 
 #[cfg(test)]
@@ -126,6 +236,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(467835));
     }
 }
