@@ -25,7 +25,7 @@ struct Hand {
     result: HandResult,
 }
 
-fn get_card_value(card: char) -> u8 {
+fn get_card_value(card: char, jokers: bool) -> u8 {
     match card {
         '2' => 2,
         '3' => 3,
@@ -36,7 +36,10 @@ fn get_card_value(card: char) -> u8 {
         '8' => 8,
         '9' => 9,
         'T' => 10,
-        'J' => 11,
+        'J' => match jokers {
+            true => 0,
+            false => 11,
+        },
         'Q' => 12,
         'K' => 13,
         'A' => 14,
@@ -44,10 +47,10 @@ fn get_card_value(card: char) -> u8 {
     }
 }
 
-fn build_card(card: char) -> Card {
+fn build_card(card: char, jokers: bool) -> Card {
     Card {
         label: card,
-        value: get_card_value(card),
+        value: get_card_value(card, jokers),
     }
 }
 
@@ -76,6 +79,53 @@ fn get_of_a_kinds_for_cards(mut cards: Vec<Card>) -> Vec<u8> {
     of_a_kinds
 }
 
+fn get_updated_of_a_kinds_with_jokers(of_a_kinds: Vec<u8>, num_jokers: u8) -> Vec<u8> {
+    match num_jokers {
+        0 => of_a_kinds,
+        5 => vec![num_jokers],
+        _ => {
+            let mut of_a_kinds = of_a_kinds;
+            of_a_kinds.sort_by(|a, b| b.cmp(a));
+            match of_a_kinds.len() {
+                0 => of_a_kinds.push(num_jokers + 1),
+                _ => of_a_kinds[0] += num_jokers,
+            };
+            of_a_kinds
+        }
+    }
+}
+
+fn get_of_a_kinds_for_cards_with_jokers(mut cards: Vec<Card>) -> Vec<u8> {
+    let mut of_a_kinds: Vec<u8> = vec![];
+    let mut prev_card: Option<Card> = None;
+    let mut curr_matches: u8 = 0;
+    let mut num_jokers: u8 = 0;
+    cards.sort_by(|a, b| a.value.cmp(&b.value));
+    cards.iter().for_each(|card| {
+        if card.label == 'J' {
+            num_jokers += 1;
+            return;
+        }
+
+        if prev_card.is_none() || prev_card.unwrap() != *card {
+            if curr_matches > 1 {
+                of_a_kinds.push(curr_matches);
+            };
+            curr_matches = 1;
+            prev_card = Some(*card);
+            return;
+        };
+
+        curr_matches += 1;
+    });
+
+    if curr_matches > 1 {
+        of_a_kinds.push(curr_matches);
+    };
+
+    get_updated_of_a_kinds_with_jokers(of_a_kinds, num_jokers)
+}
+
 fn get_hand_result_for_of_a_kinds(of_a_kinds: &Vec<u8>) -> HandResult {
     if of_a_kinds.is_empty() {
         return HandResult::HighCard;
@@ -99,16 +149,29 @@ fn get_hand_result_for_of_a_kinds(of_a_kinds: &Vec<u8>) -> HandResult {
     panic!("Could not determine hand result");
 }
 
-fn get_hand_result(cards: &[Card]) -> HandResult {
-    let of_a_kinds = get_of_a_kinds_for_cards(cards.to_vec());
-    get_hand_result_for_of_a_kinds(&of_a_kinds)
+fn get_hand_result(cards: &[Card], jokers: bool) -> HandResult {
+    match jokers {
+        true => {
+            let of_a_kinds = get_of_a_kinds_for_cards_with_jokers(cards.to_vec());
+            get_hand_result_for_of_a_kinds(&of_a_kinds)
+        }
+        false => {
+            let of_a_kinds = get_of_a_kinds_for_cards(cards.to_vec());
+            get_hand_result_for_of_a_kinds(&of_a_kinds)
+        }
+    }
 }
 
-fn build_hand(input_line: &str) -> Hand {
+fn build_hand(input_line: &str, jokers: bool) -> Hand {
     let input: Vec<&str> = input_line.split_whitespace().collect();
-    let cards: Vec<Card> = input.first().unwrap().chars().map(build_card).collect();
+    let cards: Vec<Card> = input
+        .first()
+        .unwrap()
+        .chars()
+        .map(|s| build_card(s, jokers))
+        .collect();
     let bid: u128 = input.get(1).unwrap().parse().unwrap();
-    let result = get_hand_result(&cards);
+    let result = get_hand_result(&cards, jokers);
 
     Hand { cards, bid, result }
 }
@@ -130,7 +193,7 @@ fn get_ordering_for_equal_hands(a: &Hand, b: &Hand) -> Ordering {
 }
 
 pub fn part_one(input: &str) -> Option<u128> {
-    let mut hands: Vec<Hand> = input.lines().map(build_hand).collect();
+    let mut hands: Vec<Hand> = input.lines().map(|l| build_hand(l, false)).collect();
     hands.sort_by(|a, b| match a.result.cmp(&b.result) {
         Ordering::Greater => Ordering::Less,
         Ordering::Less => Ordering::Greater,
@@ -144,8 +207,19 @@ pub fn part_one(input: &str) -> Option<u128> {
     Some(winnings)
 }
 
-pub fn part_two(input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<u128> {
+    let mut hands: Vec<Hand> = input.lines().map(|l| build_hand(l, true)).collect();
+    hands.sort_by(|a, b| match a.result.cmp(&b.result) {
+        Ordering::Greater => Ordering::Less,
+        Ordering::Less => Ordering::Greater,
+        Ordering::Equal => get_ordering_for_equal_hands(a, b),
+    });
+    let winnings: u128 = hands
+        .iter()
+        .enumerate()
+        .map(|(rank, hand)| hand.bid.mul((rank + 1) as u128))
+        .sum();
+    Some(winnings)
 }
 
 #[cfg(test)]
@@ -161,6 +235,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(5905));
     }
 }
