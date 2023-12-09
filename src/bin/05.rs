@@ -6,6 +6,7 @@ struct MapRange {
     destination_start: usize,
 }
 
+#[derive(Clone, Copy)]
 struct Range {
     start: usize,
     end: usize,
@@ -99,19 +100,89 @@ fn extract_seed_ranges(range: &str) -> Vec<Range> {
         let range_start = *numbers.get(i).unwrap();
         let range_length = *numbers.get(i + 1).unwrap();
         let range_end = range_start + range_length;
-        for j in range_start..=range_end {
-            seed_ranges.push(Range {
-                start: range_start,
-                end: range_end,
-            });
-        }
+        seed_ranges.push(Range {
+            start: range_start,
+            end: range_end,
+        });
         i += 2;
     }
     seed_ranges
 }
 
-fn get_range_for_map(range: &Range, map_ranges: &[MapRange]) -> Range {
-    Range { start: 0, end: 0 }
+fn spit_range_for_map(range: &Range, map_range: &MapRange) -> Vec<Range> {
+    let range_nums: Vec<usize> = (range.start..range.end).collect();
+
+    if range_nums.is_empty() {
+        return vec![];
+    }
+
+    // Gets numbers outside of the map range
+    let outside_before: Vec<&usize> = range_nums
+        .iter()
+        .filter(|r| **r < map_range.source_start)
+        .collect();
+    let outside_after: Vec<&usize> = range_nums
+        .iter()
+        .filter(|r| **r > map_range.source_end)
+        .collect();
+    let outside_before = match outside_before.len() {
+        0 => None,
+        _ => Some(Range {
+            start: **outside_before.iter().min().unwrap(),
+            end: **outside_before.iter().max().unwrap(),
+        }),
+    };
+    let outside_after = match outside_after.len() {
+        0 => None,
+        _ => Some(Range {
+            start: **outside_after.iter().min().unwrap(),
+            end: **outside_after.iter().max().unwrap(),
+        }),
+    };
+
+    // Gets transformed numbers inside of map range
+    let x: isize = map_range.source_start as isize - map_range.destination_start as isize;
+    let inside: Vec<&usize> = range_nums
+        .iter()
+        .filter(|r| **r >= map_range.source_start && **r <= map_range.source_end)
+        .collect();
+    let inside = Some(Range {
+        start: (**inside.iter().min().unwrap() as isize - x) as usize,
+        end: (**inside.iter().max().unwrap() as isize - x + 1) as usize,
+    });
+
+    [outside_before, outside_after, inside]
+        .iter()
+        .filter_map(|x| match x.is_none() {
+            true => None,
+            false => Some(x.unwrap()),
+        })
+        .collect()
+}
+
+fn get_ranges_for_map(ranges: &[Range], map_ranges: &[MapRange]) -> Vec<Range> {
+    let mut transformed_ranges: Vec<Range> = vec![];
+
+    map_ranges.iter().for_each(|mr| {
+        let new_ranges: Vec<Range> = ranges
+            .iter()
+            .flat_map(|r| {
+                // If the range is outside the bounds of the map_range, do not alter the range
+                if r.end < mr.source_start || r.start >= mr.source_end {
+                    return vec![];
+                };
+                // Otherwise, split the range up into the parts that get transformed and the parts that remain the same
+                spit_range_for_map(r, mr)
+            })
+            .collect();
+        new_ranges.iter().for_each(|r| transformed_ranges.push(*r));
+    });
+
+    if transformed_ranges.is_empty() {
+        ranges.to_vec()
+    } else {
+        transformed_ranges
+    }
 }
 
 fn get_location_numbers_for_seed_ranges(seed_ranges: Vec<Range>, lines: Vec<&str>) -> Vec<usize> {
@@ -123,7 +194,24 @@ fn get_location_numbers_for_seed_ranges(seed_ranges: Vec<Range>, lines: Vec<&str
     let temperature_to_humidity = extract_map_range_list(lines.get(6).unwrap());
     let humidity_to_location = extract_map_range_list(lines.get(7).unwrap());
 
-    vec![]
+    seed_ranges
+        .iter()
+        .map(|seed_range| {
+            let initial_ranges = vec![*seed_range];
+            let soil = get_ranges_for_map(&initial_ranges, &seed_to_soil);
+            let fertilizer = get_ranges_for_map(&soil, &soil_to_fertilizer);
+            let water = get_ranges_for_map(&fertilizer, &fertilizer_to_water);
+            let light = get_ranges_for_map(&water, &water_to_light);
+            let temperature = get_ranges_for_map(&light, &light_to_temperature);
+            let humidity = get_ranges_for_map(&temperature, &temperature_to_humidity);
+            let location = get_ranges_for_map(&humidity, &humidity_to_location);
+            location
+                .iter()
+                .min_by(|a, b| a.start.cmp(&b.start))
+                .unwrap()
+                .start
+        })
+        .collect()
 }
 
 /// Find the lowest location number
@@ -139,9 +227,10 @@ pub fn part_one(input: &str) -> Option<u32> {
 
 pub fn part_two(input: &str) -> Option<u32> {
     let lines: Vec<&str> = input.split("\n\n").collect();
-    // let seed_ranges = extract_seed_ranges(lines.first().unwrap().split(": ").last().unwrap());
+    let seed_ranges = extract_seed_ranges(lines.first().unwrap().split(": ").last().unwrap());
+    let location_numbers = get_location_numbers_for_seed_ranges(seed_ranges, lines);
 
-    None
+    Some(*location_numbers.iter().min().unwrap() as u32)
 }
 
 #[cfg(test)]
@@ -157,6 +246,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(46));
     }
 }
